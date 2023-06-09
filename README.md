@@ -36,4 +36,4 @@ A dumping ground for market related scripts.
 >>RSI=>70(**overbought**)  
 >anything inbetween (**neutral**).  
 
-![alt text](https://i.imgur.com/Ira7acR.png)
+![alt text](https://i.imgur.com/295zU2X.png)
