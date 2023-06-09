@@ -30,6 +30,8 @@ A dumping ground for market related scripts.
 ```
 
 ## rsi.py
+>> pip3 install ccxt pandas numpy rich asciichartpy  
+> 
 >Monitor a pair e.g. (ETH/USDT) over 1 or more exchanges. Show RSI, Price & Volume along with sentiment.  
 >Sentiment is calculated by the following setting:  
 >>RSI<=30(**oversold**)  
