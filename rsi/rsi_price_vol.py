@@ -11,39 +11,6 @@ from asciichartpy import plot
 
 
 def calculate_RSI(data, period):
-    """
-    Calculate the Relative Strength Index (RSI) for a given data series.
-
-    RSI is a momentum oscillator that measures the speed and change of price movements.
-    It compares the magnitude of recent price gains to recent price losses to determine
-    overbought or oversold conditions of an asset.
-
-    Parameters:
-        data (pandas.Series): The input data series of prices.
-        period (int): The number of periods to consider for the RSI calculation.
-
-    Returns:
-        pandas.Series: The calculated RSI values.
-
-    Note:
-        The length of the data series should be greater than the specified period.
-
-    Example:
-        >> prices = pd.Series([10, 12, 15, 14, 16, 18, 20, 19, 17, 15])
-        >> rsi = calculate_RSI(prices, 5)
-        >> print(rsi)
-            0           NaN
-            1           NaN
-            2           NaN
-            3           NaN
-            4    80.000000
-            5    76.190476
-            6    80.952381
-            7    76.666667
-            8    66.666667
-            9    57.894737
-            dtype: float64
-    """
     delta = data.diff()
     up, down = delta.copy(), delta.copy()
     up[up < 0] = 0
@@ -56,28 +23,36 @@ def calculate_RSI(data, period):
 
 
 # Define the exchanges to check
-exchanges = ['binance', 'kucoin', 'okx', 'huobi']
+exchanges = ['binance', 'okx', 'huobi']
 
 # Define the symbols
-spot_symbol = 'ETH/USDT'
+spot_symbol = 'BTC/USDT:USDT'
 
 # Define the timeframe and the number of periods for RSI calculation
 timeframe = '1m'
 periods = 20
-history = {exchange: {'rsi': [], 'open': [], 'volume': []} for exchange in exchanges}
-
+history = {
+    exchange: {
+        'rsi': [],
+        'open': [],
+        'volume': [],
+        'positive_volume': [0],
+        'negative_volume': [0]
+    } for exchange in exchanges
+}
 console = Console()
 while True:
     panels = []
     for exchange_id in exchanges:
         try:
             exchange = getattr(ccxt, exchange_id)()
-            candles = exchange.fetch_ohlcv(spot_symbol, timeframe, limit=periods * 2)  # Fetching more data
+            candles = exchange.fetch_ohlcv(spot_symbol, timeframe, limit=periods * 2)
             df = pd.DataFrame(candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
             df.set_index('timestamp', inplace=True)
             df['rsi'] = calculate_RSI(df['close'], periods)
             last_rsi = df['rsi'].iloc[-1]
+
             if np.isnan(last_rsi):
                 sentiment = 'insufficient data'
                 sentiment_color = "yellow"
@@ -92,15 +67,30 @@ while True:
                 sentiment_color = "white"
 
             history[exchange_id]['rsi'].append(last_rsi)
-            history[exchange_id]['rsi'] = history[exchange_id]['rsi'][-30:]  # Keep only the last 60 readings
+            history[exchange_id]['rsi'] = history[exchange_id]['rsi'][-30:]
 
             # Storing the open price history
             history[exchange_id]['open'].append(df['open'].iloc[-1])
-            history[exchange_id]['open'] = history[exchange_id]['open'][-30:]  # Keep only the last 60 readings
+            history[exchange_id]['open'] = history[exchange_id]['open'][-30:]
 
             # Storing the volume history
             history[exchange_id]['volume'].append(df['volume'].iloc[-1])
-            history[exchange_id]['volume'] = history[exchange_id]['volume'][-30:]  # Keep only the last 60 readings
+            history[exchange_id]['volume'] = history[exchange_id]['volume'][-30:]
+
+            # Storing positive and negative volumes
+            if len(history[exchange_id]['open']) > 1:
+                if df['close'].iloc[-1] > history[exchange_id]['open'][-2]:
+                    history[exchange_id]['positive_volume'].append(df['volume'].iloc[-1])
+                    history[exchange_id]['negative_volume'].append(0)
+                else:
+                    history[exchange_id]['positive_volume'].append(0)
+                    history[exchange_id]['negative_volume'].append(df['volume'].iloc[-1])
+            history[exchange_id]['positive_volume'] = history[exchange_id]['positive_volume'][-30:]
+            history[exchange_id]['negative_volume'] = history[exchange_id]['negative_volume'][-30:]
+
+            # Create positive and negative volume charts
+            positive_volume_chart = plot(history[exchange_id]['positive_volume'], {'height': 6, 'min': min(history[exchange_id]['positive_volume']), 'max': max(history[exchange_id]['positive_volume'])})
+            negative_volume_chart = plot(history[exchange_id]['negative_volume'], {'height': 6, 'min': min(history[exchange_id]['negative_volume']), 'max': max(history[exchange_id]['negative_volume'])})
 
             table = Table()
             table.add_column("Timestamp", style="white")
@@ -116,16 +106,18 @@ while True:
                           f"{last_candle['low']:.2f}", f"{last_candle['close']:.2f}",
                           f"{last_candle['volume']:.2f}", f"{last_rsi:.2f}", sentiment)
 
-            rsi_chart = plot(history[exchange_id]['rsi'], {'height': 8})
-            open_chart = plot(history[exchange_id]['open'], {'height': 8})
-            volume_chart = plot(history[exchange_id]['volume'], {'height': 8})
+            rsi_chart = plot(history[exchange_id]['rsi'], {'height': 6, 'min': min(history[exchange_id]['rsi']), 'max': max(history[exchange_id]['rsi'])})
+            open_chart = plot(history[exchange_id]['open'], {'height': 6, 'min': min(history[exchange_id]['open']), 'max': max(history[exchange_id]['open'])})
+            volume_chart = plot(history[exchange_id]['volume'], {'height': 6, 'min': min(history[exchange_id]['volume']), 'max': max(history[exchange_id]['volume'])})
 
-            panel_content = f"Open: {last_candle['open']:.2f}\n" + \
+            panel_content = f"Open: {last_candle['open']:,.2f}\n" + \
                             f"Sentiment: [{sentiment_color}]{sentiment}[/{sentiment_color}]\n" + \
-                            "\nRelative Strength Indicator\n" + "[red]" + rsi_chart + "[/red]" + \
-                            "\nOpen Price\n" + "[yellow]" + open_chart + "[/yellow]" + \
-                            "\nVolume\n" + "[green]" + volume_chart + "[/green]"
-            panels.append(Panel(panel_content, title=f"[white]{exchange_id.upper()}[/white] - [white]{str(df.index[-1])}[/white]", height=40, style="cyan"))
+                            "\nOpen Price\n" + "[bright_yellow]" + open_chart + "[/bright_yellow]" + \
+                            "\n\nRelative Strength Indicator\n" + "[bright_magenta]" + rsi_chart + "[/bright_magenta]" + \
+                            "\nVolume\n" + "[gray]" + volume_chart + "[/gray]" + \
+                            "\nBought\n" + "[bright_green]" + positive_volume_chart + "[/bright_green]" + \
+                            "\nSold\n" + "[bright_red]" + negative_volume_chart + "[/bright_red]"
+            panels.append(Panel(panel_content, title=f"[bright_blue]{exchange_id.upper()}[/bright_blue] - [white]{str(df.index[-1])}[/white]", height=50, style="cyan"))
 
         except Exception as e:
             console.print(f"An error occurred while fetching data from {exchange_id}: {e}", style="purple")
@@ -146,8 +138,7 @@ while True:
             "Y@#@#g,,     _,dP"
               `""YBBgggddP""'
               
-AAAaaaauughh, Immm X100 leverrrrraaaggiiiingggh
-            """))
+AAAaaaauughh, Immmmmm X100 leverrrrraaaggiiiingggh"""))
     console.print(Align.center(f"Watching {spot_symbol} on {timeframe} timeframe using {periods} periods"), style="magenta")
     console.print(Align.center(Columns(panels)))
     time.sleep(10)
